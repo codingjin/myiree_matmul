@@ -14,8 +14,8 @@
 #define TILE_N 16
 #define TILE_K 1
 
-#define WARMUP 2
-#define RUN 2
+#define WARMUP 10
+#define RUN 10
 
 #define UK_PREFETCH_RO(ptr, hint) __builtin_prefetch((ptr), /*rw=*/0, hint)
 #define UK_PREFETCH_RW(ptr, hint) __builtin_prefetch((ptr), /*rw=*/1, hint)
@@ -135,10 +135,10 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    printf("Sequential 0 : %.2f GFLOPS\n", flops / avg_time0 / 1e9);
-    printf("Sequential 1 : %.2f GFLOPS\n", flops / avg_time1 / 1e9);
-    printf("Sequential 2 : %.2f GFLOPS\n", flops / avg_time2 / 1e9);
-    printf("Sequential 3 : %.2f GFLOPS\n", flops / avg_time3 / 1e9);
+    printf("Sequential 0 : %.0f GFLOPS\n", flops / avg_time0 / 1e9);
+    printf("Sequential 1 : %.0f GFLOPS\n", flops / avg_time1 / 1e9);
+    printf("Sequential 2 : %.0f GFLOPS\n", flops / avg_time2 / 1e9);
+    printf("Sequential 3 : %.0f GFLOPS\n", flops / avg_time3 / 1e9);
 
     
     // OpenMP mode
@@ -201,10 +201,10 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    printf("OpenMp 0 : %.2f GFLOPS\n", flops / avg_time0 / 1e9);
-    printf("OpenMp 1 : %.2f GFLOPS\n", flops / avg_time1 / 1e9);
-    printf("OpenMp 2 : %.2f GFLOPS\n", flops / avg_time2 / 1e9);
-    printf("OpenMp 3 : %.2f GFLOPS\n", flops / avg_time3 / 1e9);
+    printf("OpenMp 0 : %.0f GFLOPS\n", flops / avg_time0 / 1e9);
+    printf("OpenMp 1 : %.0f GFLOPS\n", flops / avg_time1 / 1e9);
+    printf("OpenMp 2 : %.0f GFLOPS\n", flops / avg_time2 / 1e9);
+    printf("OpenMp 3 : %.0f GFLOPS\n", flops / avg_time3 / 1e9);
 
     // Cleanup
     free(A);
@@ -415,7 +415,7 @@ void matmul_reference(float* C, const float* A, const float* B, int M, int N, in
 // Initialize matrix with random values
 void init_matrix(float* mat, int size) {
     for (int i = 0; i < size; i++) {
-        mat[i] = 0.5 + (float)rand() / (float)RAND_MAX;
+        mat[i] = (float)rand() / (float)RAND_MAX;
     }
 }
 

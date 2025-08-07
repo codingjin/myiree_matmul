@@ -1,0 +1,37 @@
+clang -O3 -march=native -mavx512f -fopenmp avx512_16.c -o avx512_16
+Matrix multiplication: 4096x4096 * 4096x128 = 4096x128
+Sequential 0 : 54.27 GFLOPS
+Sequential 1 : 172.17 GFLOPS
+Sequential 2 : 54.45 GFLOPS
+Sequential 3 : 170.41 GFLOPS
+OpenMp 0 : 4.03 GFLOPS
+OpenMp 1 : 58.28 GFLOPS
+OpenMp 2 : 4.03 GFLOPS
+OpenMp 3 : 56.77 GFLOPS
+Matrix multiplication: 128x4096 * 4096x8192 = 128x8192
+Sequential 0 : 57.47 GFLOPS
+Sequential 1 : 89.02 GFLOPS
+Sequential 2 : 57.65 GFLOPS
+Sequential 3 : 88.58 GFLOPS
+OpenMp 0 : 4.06 GFLOPS
+OpenMp 1 : 29.40 GFLOPS
+OpenMp 2 : 4.07 GFLOPS
+OpenMp 3 : 28.60 GFLOPS
+Matrix multiplication: 128x8192 * 8192x4096 = 128x4096
+Sequential 0 : 58.36 GFLOPS
+Sequential 1 : 92.32 GFLOPS
+Sequential 2 : 58.46 GFLOPS
+Sequential 3 : 92.08 GFLOPS
+OpenMp 0 : 3.90 GFLOPS
+OpenMp 1 : 29.76 GFLOPS
+OpenMp 2 : 3.91 GFLOPS
+OpenMp 3 : 29.53 GFLOPS
+Matrix multiplication: 4096x4096 * 4096x4096 = 4096x4096
+Sequential 0 : 91.27 GFLOPS
+Sequential 1 : 98.76 GFLOPS
+Sequential 2 : 91.75 GFLOPS
+Sequential 3 : 98.20 GFLOPS
+OpenMp 0 : 28.77 GFLOPS
+OpenMp 1 : 64.86 GFLOPS
+OpenMp 2 : 29.41 GFLOPS
+OpenMp 3 : 61.85 GFLOPS
