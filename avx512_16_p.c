@@ -8,6 +8,7 @@
 #include <time.h>
 #include <assert.h>
 #include <math.h>
+#include <omp.h>
 
 #define TILE_M 16
 #define TILE_N 16
@@ -15,6 +16,7 @@
 
 #define WARMUP 10
 #define RUN 10
+#define MAXTHREADNUM 32
 
 #define UK_PREFETCH_RO(ptr, hint) __builtin_prefetch((ptr), /*rw=*/0, hint)
 #define UK_PREFETCH_RW(ptr, hint) __builtin_prefetch((ptr), /*rw=*/1, hint)
@@ -41,16 +43,15 @@ int check_result(const float* mat1, const float* mat2, int size, float tolerance
 void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs);
 
 
-
 int main(int argc, char* argv[]) {
     if (argc != 4) {
-        printf("Usage: ./avx512_16 M N K\n");
+        printf("Usage: ./avx512_16_p M N K\n");
         exit(1);
     }
     int M = atoi(argv[1]);
     int N = atoi(argv[2]);
     int K = atoi(argv[3]);
-    printf("Matrix multiplication: %dx%d * %dx%d = %dx%d\n", M, K, K, N, M, N);
+    printf("\n\nMatrix multiplication: %dx%d * %dx%d = %dx%d\n", M, K, K, N, M, N);
     
     float* A = (float*)malloc(M * K * sizeof(float));
     float* B = (float*)malloc(K * N * sizeof(float));
@@ -67,107 +68,58 @@ int main(int argc, char* argv[]) {
     // Reference implementation
     matmul_reference(C_ref, A, B, M, N, K);
 
-    // Sequential mode
-    for (int i = 0; i < WARMUP; ++i) {
-        memset(C_iree, 0, M * N * sizeof(float));
-        // Pack matrices into tiled format
-        TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
-        TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
-        TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
-        iree_mmt4d(C_tiled, A_tiled, B_tiled);
-        unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
-        free(A_tiled->data);
-        free(A_tiled);
-        free(B_tiled->data);
-        free(B_tiled);
-        free(C_tiled->data);
-        free(C_tiled);
+    for (int tn = 2; tn <= MAXTHREADNUM; ++tn) {
+        omp_set_num_threads(tn);
+        // OpenMP mode
+        for (int i = 0; i < WARMUP; ++i) {
+            memset(C_iree, 0, M * N * sizeof(float));
+            // Pack matrices into tiled format
+            TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
+            TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
+            TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
+            iree_mmt4d(C_tiled, A_tiled, B_tiled);
+            unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
+            free(A_tiled->data);
+            free(A_tiled);
+            free(B_tiled->data);
+            free(B_tiled);
+            free(C_tiled->data);
+            free(C_tiled);
+        }
+        
+        clock_t t0, t1;
+        double time[RUN];
+        double avg_time = 0.0;
+        for (int i = 0; i < RUN; ++i) {
+            memset(C_iree, 0, M * N * sizeof(float));
+            TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
+            TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
+            TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
+
+            t0 = clock();
+            iree_mmt4d(C_tiled, A_tiled, B_tiled);
+            t1 = clock();
+            unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
+            time[i] = (double)(t1 - t0) / CLOCKS_PER_SEC;
+            free(A_tiled->data);
+            free(A_tiled);
+            free(B_tiled->data);
+            free(B_tiled);
+            free(C_tiled->data);
+            free(C_tiled);
+        }
+        for (int i = 0; i < RUN; ++i) {
+            avg_time += time[i];
+        }
+        avg_time /= RUN;
+
+        // Verify results
+        if (!check_result(C_ref, C_iree, M * N, 1e-5)) {
+            printf("OpenMp mode (ThreadNum=%d) Results do not match!\n", tn);
+            exit(1);
+        }
+        printf("OpenMP ThreadNum=%d : %.0f GFLOPS\n", tn, flops / avg_time / 1e9);
     }
-
-    clock_t t0, t1;
-    double time[RUN];
-    double avg_time = 0.0;
-    for (int i = 0; i < RUN; ++i) {
-        memset(C_iree, 0, M * N * sizeof(float));
-        TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
-        TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
-        TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
-
-        t0 = clock();
-        iree_mmt4d(C_tiled, A_tiled, B_tiled);
-        t1 = clock();
-        unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
-        time[i] = (double)(t1 - t0) / CLOCKS_PER_SEC;
-        free(A_tiled->data);
-        free(A_tiled);
-        free(B_tiled->data);
-        free(B_tiled);
-        free(C_tiled->data);
-        free(C_tiled);
-    }
-
-    // Verify results
-    if (!check_result(C_ref, C_iree, M * N, 1e-5)) {
-        printf("Sequential mode Results do not match!\n");
-        exit(1);
-    }
-
-    for (int i = 0; i < RUN; ++i) {
-        avg_time += time[i];
-    }
-    avg_time /= RUN;
-    printf("Sequential : %.0f GFLOPS\n", flops / avg_time / 1e9);
-    
-    /*
-    clock_t t0, t1, t2, t3;
-    double time0[RUN], time1[RUN], time2[RUN], time3[RUN];
-    double avg_time0, avg_time1, avg_time2, avg_time3;
-    for (int i = 0; i < RUN; ++i) {
-        memset(C_iree, 0, M * N * sizeof(float));
-        t0 = clock();
-        TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
-        TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
-        TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
-        t1 = clock();
-        iree_mmt4d(C_tiled, A_tiled, B_tiled);
-        t2 = clock();
-        unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
-        t3 = clock();
-        time0[i] = (double)(t3 - t0) / CLOCKS_PER_SEC;
-        time1[i] = (double)(t2 - t1) / CLOCKS_PER_SEC;
-        time2[i] = (double)(t2 - t0) / CLOCKS_PER_SEC;
-        time3[i] = (double)(t3 - t1) / CLOCKS_PER_SEC;
-        free(A_tiled->data);
-        free(A_tiled);
-        free(B_tiled->data);
-        free(B_tiled);
-        free(C_tiled->data);
-        free(C_tiled);
-    }
-    avg_time0 = 0.0; 
-    avg_time1 = 0.0; 
-    avg_time2 = 0.0;
-    avg_time3 = 0.0;
-    for (int i = 0; i < RUN; ++i) {
-        avg_time0 += time0[i];
-        avg_time1 += time1[i];
-        avg_time2 += time2[i];
-        avg_time3 += time3[i];
-    }
-    avg_time0 /= RUN;
-    avg_time1 /= RUN;
-    avg_time2 /= RUN;
-    avg_time3 /= RUN;
-
-    printf("Sequential 0 : %.0f GFLOPS\n", flops / avg_time0 / 1e9);
-    printf("Sequential 1 : %.0f GFLOPS\n", flops / avg_time1 / 1e9);
-    printf("Sequential 2 : %.0f GFLOPS\n", flops / avg_time2 / 1e9);
-    printf("Sequential 3 : %.0f GFLOPS\n", flops / avg_time3 / 1e9);
-    */
-
-
-    
-
     // Cleanup
     free(A);
     free(B);
@@ -180,7 +132,7 @@ int main(int argc, char* argv[]) {
 
 void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs) {
     // micro-kernel: 16x16x1
-    //#pragma omp parallel for collapse(2)
+    #pragma omp parallel for collapse(2)
     for (int m = 0; m < lhs->tile_rows; m++) {
         for (int n = 0; n < rhs->tile_cols; n++) {
             const float* lhs_tile = &lhs->data[(m * lhs->tile_cols) * TILE_M];
@@ -217,6 +169,7 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
         }
     }
 }
+
 
 // Pack matrix into tiled layout
 TiledMatrix* pack_matrix(const float* src, int rows, int cols, int tile_size_m, int tile_size_n) {
@@ -268,6 +221,7 @@ void unpack_matrix(float* dst, const TiledMatrix* tiled, int tile_size_m, int ti
     }
 }
 
+
 // Standard matrix multiplication for verification
 void matmul_reference(float* C, const float* A, const float* B, int M, int N, int K) {
     for (int i = 0; i < M; ++i) {
@@ -298,7 +252,5 @@ int check_result(const float* mat1, const float* mat2, int size, float tolerance
     }
     return 1;
 }
-
-
 
 
